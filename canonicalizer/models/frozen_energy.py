@@ -32,11 +32,23 @@ class FrozenEnergyCanonicalizer(nn.Module):
         # 1. Feature Extractor (Frozen)
         self.dino = DINOv2FeatureExtractor(model_name=dino_model, freeze=True)
         self.feature_layer = feature_layer
+
+        # Determine embedding dimension
+        if 'vits' in dino_model:
+            embed_dim = 384
+        elif 'vitb' in dino_model:
+            embed_dim = 768
+        elif 'vitl' in dino_model:
+            embed_dim = 1024
+        elif 'vitg' in dino_model:
+            embed_dim = 1536
+        else:
+            embed_dim = 768 # Default fallback
         
         # 2. Initialization Network (Learned)
-        self.cross_attention = CrossAttentionBlock(dim=768, num_heads=8)
+        self.cross_attention = CrossAttentionBlock(dim=embed_dim, num_heads=8)
         self.init_head = nn.Sequential(
-            nn.Linear(768, 256),
+            nn.Linear(embed_dim, 256),
             nn.ReLU(),
             nn.Linear(256, 4)  # (omega, sigma, vx, vy)
         )
@@ -118,6 +130,10 @@ class FrozenEnergyCanonicalizer(nn.Module):
             # Compute Gradient wrt perturbation
             # create_graph=True allows backprop from the final loss through this gradient step
             grad_xi = torch.autograd.grad(energy.sum(), xi_perturb, create_graph=self.training)[0]
+            
+            # Detach gradient to avoid double backward (FOMAML approximation)
+            # This avoids "derivative for aten::grid_sampler_2d_backward is not implemented"
+            grad_xi = grad_xi.detach()
             
             # Update
             # Gradient checks: if energy increases with xi, we want -grad
