@@ -102,28 +102,20 @@ class RubikDataset(Dataset):
             img0_tensor = self.transform(img0)
             img1_tensor = self.transform(img1)
             
-        # For training, we technically need Ground Truth Correspondences
-        # But RUBIK json only gives Relative Pose and Intrinsics.
-        # We can either:
-        # 1. Project random points from I1 to I2 using Depth + Pose (needs depth maps)
-        # 2. Or just return the images/pose if we use a photometric/pose loss instead of correspondence loss.
-        # 3. Or use an offline SIFT/SuperPoint matching to get pseudo-GT.
-        
-        # Assuming we want to use the CorrespondenceLoss we defined, we need keypoints.
-        # Let's assume we can generate dense matches via homography if planar, or epipolar?
-        # Without depth, we can't get exact pixel-wise correspondence for general scenes.
-        
-        # HACK: For now, I will return dummy keypoints just to make the trainer runnable 
-        # as per user request to "implement infrastructure". 
-        # A real training setup would need depth maps (available in unidepths) to project points.
-        
+        # For dense matching methods (RoMa, LoFTR, etc.), we don't need sparse keypoints.
+        # Instead, we rely on:
+        # 1. Photometric loss (image similarity) in feature space
+        # 2. Pose supervision using ground truth relative pose
+        # 3. The frozen DINO energy landscape guides canonicalization
+        #
+        # This approach is more suitable for dense matchers than sparse correspondences.
+
         return {
             'image0': img0_tensor,
             'image1': img1_tensor,
-            # Dummy placeholders - user needs to decide how to supervise (depth projection vs pseudo-GT)
-            'keypoints0': torch.zeros(100, 2), 
-            'keypoints1': torch.zeros(100, 2),
             'pose': torch.tensor(sample['rel_pose'], dtype=torch.float32),
-            'K0': torch.tensor(sample['K1'], dtype=torch.float32), # Note K1/K2 naming in json vs indexes
-            'K1': torch.tensor(sample['K2'], dtype=torch.float32)
+            'K0': torch.tensor(sample['K1'], dtype=torch.float32),
+            'K1': torch.tensor(sample['K2'], dtype=torch.float32),
+            'original_size0': torch.tensor([H0, W0], dtype=torch.float32),
+            'original_size1': torch.tensor([H1, W1], dtype=torch.float32)
         }

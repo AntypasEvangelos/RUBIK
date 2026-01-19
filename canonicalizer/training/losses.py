@@ -1,7 +1,67 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from ..core.warping import transform_points
+
+class PhotometricLoss(nn.Module):
+    """
+    Photometric loss for dense matching.
+    Measures similarity between warped source and target in feature space.
+
+    This is the primary loss for training with dense matchers where we
+    don't have sparse keypoint correspondences.
+    """
+    def __init__(self, loss_type: str = 'l1', reduction: str = 'mean'):
+        super().__init__()
+        self.loss_type = loss_type
+        self.reduction = reduction
+
+    def forward(
+        self,
+        warped_features: torch.Tensor,
+        target_features: torch.Tensor,
+        mask: torch.Tensor = None
+    ) -> torch.Tensor:
+        """
+        Args:
+            warped_features: (B, N, D) features of warped source
+            target_features: (B, N, D) features of target
+            mask: (B, N) optional valid region mask
+
+        Returns:
+            Scalar loss
+        """
+        if self.loss_type == 'l1':
+            loss = F.l1_loss(warped_features, target_features, reduction='none')
+        elif self.loss_type == 'l2':
+            loss = F.mse_loss(warped_features, target_features, reduction='none')
+        elif self.loss_type == 'cosine':
+            # Cosine distance: 1 - cosine_similarity
+            loss = 1 - F.cosine_similarity(warped_features, target_features, dim=-1, eps=1e-8)
+            if len(loss.shape) == 2:  # (B, N)
+                loss = loss.unsqueeze(-1)
+        else:
+            raise ValueError(f"Unknown loss type: {self.loss_type}")
+
+        # Average over feature dimension if needed
+        if len(loss.shape) == 3:  # (B, N, D)
+            loss = loss.mean(dim=-1)  # (B, N)
+
+        # Apply mask if provided
+        if mask is not None:
+            loss = loss * mask
+            if self.reduction == 'mean':
+                return loss.sum() / (mask.sum() + 1e-8)
+            elif self.reduction == 'sum':
+                return loss.sum()
+        else:
+            if self.reduction == 'mean':
+                return loss.mean()
+            elif self.reduction == 'sum':
+                return loss.sum()
+
+        return loss
 
 class CorrespondenceLoss(nn.Module):
     """

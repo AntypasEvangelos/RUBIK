@@ -57,17 +57,25 @@ class CanonicalizerWrapper(nn.Module):
         # or we might need specific adapter logic.
         matches = self.matcher(matcher_input)
         
-        # 3. Transform back
+        # 3. Transform keypoints back to original source frame
         if self.transform_back and 'keypoints0' in matches:
-            kpts0 = matches['keypoints0'] # (B, N, 2)
-            
-            # g_star maps Source -> Target (Canonical)
-            # So Warped = g_star · Source
-            # kpts0 are in Warped frame
-            # We need kpts0_orig in Source frame
-            # Warped_pts = g_star · Source_pts
-            # Source_pts = g_star⁻¹ · Warped_pts
-            
+            kpts0 = matches['keypoints0']  # (B, N, 2)
+
+            # COORDINATE TRANSFORMATION:
+            #   g_star: Source → Warped (canonicalized)
+            #   kpts0: Keypoints in Warped frame (from matcher)
+            #   Goal: Transform kpts0 back to original Source frame
+            #
+            # MATHEMATICS:
+            #   Warped_pts = g_star · Source_pts
+            #   ⟹ Source_pts = g_star^{-1} · Warped_pts
+            #
+            # COORDINATE SYSTEM:
+            #   - If keypoints are in PIXEL coordinates, convert to normalized first
+            #   - Apply transformation in normalized space
+            #   - Convert back to pixels if needed
+            #   (Note: Most matchers output pixel coords, but g_star operates in normalized coords)
+
             g_inv = Sim2.inverse(g_star)
             
             # Use Sim2 transformation utility
