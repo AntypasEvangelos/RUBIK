@@ -124,9 +124,9 @@ def get_scale(func, scale_ini, R, t, pts3D_1, pts3D_2):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--method", type=str, default="xfeat", help="""Method to evaluate in (xfeat, 
-                                                                                              xfeat_star, 
-                                                                                              xfeat_lighterglue, 
+    parser.add_argument("--method", type=str, default="xfeat", help="""Method to evaluate in (xfeat,
+                                                                                              xfeat_star,
+                                                                                              xfeat_lighterglue,
                                                                                               loftr,
                                                                                               sp+lightglue,
                                                                                               disk+lightglue,
@@ -141,64 +141,75 @@ if __name__ == "__main__":
                                                                                               orb,
                                                                                               rootsift)""")
     parser.add_argument("--estimate_pose", type=str, default="essential", help="""Method to estimate pose in (essential, fundamental)""")
+    parser.add_argument("--nuscenes_path", type=str, default="/vast/projects/kostas/geometric-learning/nuscenes/nuscenes-download", help="Path to nuscenes dataset folder")
+    parser.add_argument("--unidepths_path", type=str, default="/vast/projects/kostas/geometric-learning/nuscenes/unidepths", help="Path to unidepth depth maps folder")
+    parser.add_argument("--data_path", type=str, default="rubik.json", help="Path to rubik.json data file")
+    parser.add_argument("--output_path", type=str, default="./results", help="Path to save results")
     args = parser.parse_args()
 
     method = args.method
     estimate_pose = args.estimate_pose
+    nuscenes_path = args.nuscenes_path
+    unidepths_path = args.unidepths_path
+    data_path = args.data_path
+    output_path = args.output_path
     print(method)
-    os.makedirs('results', exist_ok=True)
+    os.makedirs(output_path, exist_ok=True)
+
+    # Get the directory where this script is located for relative imports
+    script_dir = osp.dirname(osp.abspath(__file__))
 
     # Init model, data and nuscenes
     if "xfeat" in method:
-        sys.path.append("../../detector_based/accelerated_features")
+        sys.path.append(osp.join(script_dir, "detector_based/accelerated_features"))
         from modules.xfeat import XFeat
 
         xfeat = XFeat()
 
     elif method == "loftr":
-        sys.path.append("../../detector_free/LoFTR")
+        sys.path.append(osp.join(script_dir, "detector_free/LoFTR"))
         from src.loftr import LoFTR, default_cfg
 
         loftr = LoFTR(config=default_cfg)
-        loftr.load_state_dict(torch.load("../../detector_free/LoFTR/weights/outdoor_ds.ckpt")['state_dict'])
+        loftr.load_state_dict(torch.load(osp.join(script_dir, "detector_free/LoFTR/weights/outdoor_ds.ckpt"))['state_dict'])
         loftr = loftr.eval().cuda()
 
     elif method == "sp+lightglue":
-        sys.path.append("../../detector_based/LightGlue")
+        sys.path.append(osp.join(script_dir, "detector_based/LightGlue"))
         from lightglue import LightGlue, SuperPoint
 
         extractor = SuperPoint(max_num_keypoints=None).eval().cuda()  # load the extractor
         matcher = LightGlue(features='superpoint', depth_confidence=-1, width_confidence=-1).eval().cuda()  # load the matcher
 
     elif method == "disk+lightglue":
-        sys.path.append("../../detector_based/LightGlue")
+        sys.path.append(osp.join(script_dir, "detector_based/LightGlue"))
         from lightglue import LightGlue, DISK
 
         extractor = DISK(max_num_keypoints=None).eval().cuda()  # load the extractor
         matcher = LightGlue(features='disk', depth_confidence=-1, width_confidence=-1).eval().cuda()  # load the matcher
 
     elif method == "sift+lightglue":
-        sys.path.append("../../detector_based/LightGlue")
+        sys.path.append(osp.join(script_dir, "detector_based/LightGlue"))
         from lightglue import LightGlue, SIFT
 
         extractor = SIFT().eval().cuda()  # load the extractor
         matcher = LightGlue(features='sift', depth_confidence=-1, width_confidence=-1).eval().cuda()  # load the matcher
 
     elif method == "aliked+lightglue":
-        sys.path.append("../../detector_based/LightGlue")
+        sys.path.append(osp.join(script_dir, "detector_based/LightGlue"))
         from lightglue import LightGlue, ALIKED
 
         extractor = ALIKED().eval().cuda()  # load the extractor
         matcher = LightGlue(features='aliked', depth_confidence=-1, width_confidence=-1).eval().cuda()  # load the matcher
 
     elif method == "roma":
-        sys.path.append("../../detector_free/RoMa")
+        sys.path.append(osp.join(script_dir, "detector_free/RoMa"))
         from romatch import roma_outdoor
 
         roma_model = roma_outdoor(device="cuda")
 
     elif method == "dedode":
-        sys.path.append("../../detector_based/DeDoDe")
+        sys.path.append(osp.join(script_dir, "detector_based/DeDoDe"))
         from DeDoDe import dedode_detector_L, dedode_descriptor_G
         from DeDoDe.matchers.dual_softmax_matcher import DualSoftMaxMatcher
 
@@ -211,7 +222,7 @@ if __name__ == "__main__":
         matcher = DualSoftMaxMatcher()
     
     elif method == "eloftr":
-        sys.path.append("../../detector_free/EfficientLoFTR")
+        sys.path.append(osp.join(script_dir, "detector_free/EfficientLoFTR"))
         from copy import deepcopy
         from src.loftr import LoFTR, full_default_cfg, opt_default_cfg, reparameter
 
@@ -219,48 +230,48 @@ if __name__ == "__main__":
         print(_default_cfg)
         matcher = LoFTR(config=_default_cfg)
 
-        matcher.load_state_dict(torch.load("../../detector_free/EfficientLoFTR/weights/eloftr_outdoor.ckpt")['state_dict'])
+        matcher.load_state_dict(torch.load(osp.join(script_dir, "detector_free/EfficientLoFTR/weights/eloftr_outdoor.ckpt"))['state_dict'])
         matcher = reparameter(matcher) # no reparameterization will lead to low performance
         matcher = matcher.eval().cuda()
 
     elif method == "aspanformer":
-        sys.path.append("../../detector_free/ml-aspanformer")
-        from src.ASpanFormer.aspanformer import ASpanFormer 
+        sys.path.append(osp.join(script_dir, "detector_free/ml-aspanformer"))
+        from src.ASpanFormer.aspanformer import ASpanFormer
         from src.config.default import get_cfg_defaults
         from src.utils.misc import lower_config
         import demo.demo_utils as demo_utils
 
         config = get_cfg_defaults()
-        config.merge_from_file("../../detector_free/ml-aspanformer/configs/aspan/outdoor/aspan_test.py")
+        config.merge_from_file(osp.join(script_dir, "detector_free/ml-aspanformer/configs/aspan/outdoor/aspan_test.py"))
         _config = lower_config(config)
 
         matcher = ASpanFormer(config=_config['aspan'])
-        state_dict = torch.load("../../detector_free/ml-aspanformer/weights/outdoor.ckpt", map_location='cpu')['state_dict']
+        state_dict = torch.load(osp.join(script_dir, "detector_free/ml-aspanformer/weights/outdoor.ckpt"), map_location='cpu')['state_dict']
         matcher.load_state_dict(state_dict, strict=False)
         matcher.cuda()
         matcher.eval()
 
     elif method == "mast3r":
-        sys.path.append("../../detector_free/mast3r")
+        sys.path.append(osp.join(script_dir, "detector_free/mast3r"))
         import mast3r.utils.path_to_dust3r
         from dust3r.inference import inference
         from dust3r.utils.image import load_images
         from mast3r.fast_nn import fast_reciprocal_NNs
         from mast3r.model import AsymmetricMASt3R
 
-        model = AsymmetricMASt3R.from_pretrained("../../detector_free/mast3r/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth").cuda()
+        model = AsymmetricMASt3R.from_pretrained("/vast/projects/kostas/geometric-learning/weights/mast3r/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth").cuda()
         model = model.eval()
 
     elif method == "dust3r":
-        sys.path.append("../../detector_free/dust3r")
+        sys.path.append(osp.join(script_dir, "detector_free/dust3r"))
         from dust3r.inference import inference
         from dust3r.utils.image import load_images
         from dust3r.image_pairs import make_pairs
         from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
-        from dust3r.utils.geometry import find_reciprocal_matches,xy_grid
+        from dust3r.utils.geometry import find_reciprocal_matches, xy_grid
         from dust3r.model import AsymmetricCroCo3DStereo
 
-        model = AsymmetricCroCo3DStereo.from_pretrained("../../detector_free/dust3r/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth").cuda()
+        model = AsymmetricCroCo3DStereo.from_pretrained("/vast/projects/kostas/geometric-learning/weights/dust3r/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth").cuda()
         model = model.eval()
 
     elif method == "orb":
@@ -274,7 +285,7 @@ if __name__ == "__main__":
     else:
         raise ValueError("Invalid method")
 
-    data = json.load(open("../final_pairs.json"))
+    data = json.load(open(data_path))
 
     # Get all scenes to get intrinsics to be able to recover pose
     all_scenes = list(set([scene for box in data for scene in data[box]]))
@@ -291,8 +302,8 @@ if __name__ == "__main__":
                 results[box] = {}
 
             pairs = [eval(el) for el in list(data[box][scene].keys())]
-            paths = [[osp.join("../..", "nuscenes", "sweeps", el[0].split("__")[1].split("__")[0], el[0]), 
-                      osp.join("../..", "nuscenes", "sweeps", el[1].split("__")[1].split("__")[0], el[1])] for el in pairs]
+            paths = [[osp.join(nuscenes_path, "sweeps", el[0].split("__")[1].split("__")[0], el[0]),
+                      osp.join(nuscenes_path, "sweeps", el[1].split("__")[1].split("__")[0], el[1])] for el in pairs]
 
             for i, pair in enumerate(paths):
                 # Get gt pose
@@ -641,8 +652,8 @@ if __name__ == "__main__":
                     t_est = t_est / np.linalg.norm(t_est)
 
                     # Get scale factor using unidepths by minimizing distance to 3D points after applying transformation
-                    depth1 = np.load(f"../unidepths/{osp.basename(pair[0]).replace('.jpg', '.npy')}")
-                    depth2 = np.load(f"../unidepths/{osp.basename(pair[1]).replace('.jpg', '.npy')}")
+                    depth1 = np.load(osp.join(unidepths_path, osp.basename(pair[0]).replace('.jpg', '.npy')))
+                    depth2 = np.load(osp.join(unidepths_path, osp.basename(pair[1]).replace('.jpg', '.npy')))
 
                     # Get 3D points
                     pts3D_1 = backproject_to_3D(mkpts1, depth1, K1)
@@ -663,4 +674,4 @@ if __name__ == "__main__":
                                                    "time": round(elapsed, 5)}
 
     # Save results
-    json.dump(results, open(f"results/results_{method}_{estimate_pose}.json", "w"), indent=2)
+    json.dump(results, open(osp.join(output_path, f"results_{method}_{estimate_pose}.json"), "w"), indent=2)

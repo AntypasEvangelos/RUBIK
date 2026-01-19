@@ -28,16 +28,18 @@ def get_unidepth():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--nuscenes_path", type=str, default="./nuscenes", help="path to nuscenes dataset folder")
+    parser.add_argument("--output_path", type=str, default="./unidepths", help="path to save depth maps")
     args = parser.parse_args()
 
     nuscenes_path = args.nuscenes_path
+    output_path = args.output_path
 
     # Get all images we want to get depth for
     rubik = json.load(open("rubik.json", "r"))
-    
+
     # Get UniDepth model and create output folder
     unidepth = get_unidepth()
-    os.makedirs("unidepths", exist_ok=True)
+    os.makedirs(output_path, exist_ok=True)
 
     for box in tqdm(rubik):
         for scene in tqdm(rubik[box], leave=False):
@@ -52,24 +54,24 @@ def main():
 
                 # The same image might be in several pairs
                 # Image
-                if not osp.exists(osp.join("unidepths", image1.replace(".jpg", ".npy"))):
+                if not osp.exists(osp.join(output_path, image1.replace(".jpg", ".npy"))):
                     rgb1 = torch.from_numpy(np.array(Image.open(image1_path))).permute(2, 0, 1) # C, H, W
                     intrinsics1 = torch.from_numpy(K1).float()
 
                     predictions1 = unidepth.infer(rgb1, intrinsics1)
                     depth1 = predictions1["depth"].squeeze().cpu().numpy().astype(np.float32)
 
-                    np.save(osp.join("unidepths", image1.replace(".jpg", ".npy")), depth1)
-                
+                    np.save(osp.join(output_path, image1.replace(".jpg", ".npy")), depth1)
+
                 # Image 2
-                if not osp.exists(osp.join("unidepths", image2.replace(".jpg", ".npy"))):
+                if not osp.exists(osp.join(output_path, image2.replace(".jpg", ".npy"))):
                     rgb2 = torch.from_numpy(np.array(Image.open(image2_path))).permute(2, 0, 1) # C, H, W
                     intrinsics2 = torch.from_numpy(K2).float()
 
                     predictions2 = unidepth.infer(rgb2, intrinsics2)
                     depth2 = predictions2["depth"].squeeze().cpu().numpy().astype(np.float32)
 
-                    np.save(osp.join("unidepths", image2.replace(".jpg", ".npy")), depth2)
+                    np.save(osp.join(output_path, image2.replace(".jpg", ".npy")), depth2)
 
     return
 
