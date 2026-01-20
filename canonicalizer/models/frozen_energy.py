@@ -13,11 +13,17 @@ from .cross_attention import CrossAttentionBlock
 class FrozenEnergyCanonicalizer(nn.Module):
     """
     Canonicalizer using frozen DINOv2 energy landscape.
-    
+
     Approach 1:
         1. Extract frozen features.
         2. Predict rough initialization using cross-attention.
         3. Refine transformation via gradient descent on the frozen energy.
+
+    COORDINATE SYSTEM:
+        - The transformation g_star operates in NORMALIZED coordinates [-1, 1]
+        - warp_image() internally handles conversion from normalized to pixel coords
+        - This is consistent with grid_sample's coordinate convention
+        - When using keypoints, they must be in NORMALIZED coordinates as well
     """
     def __init__(
         self,
@@ -96,23 +102,27 @@ class FrozenEnergyCanonicalizer(nn.Module):
         g_current = Sim2.exp(xi_0)
         
         # 3. Iterative Refinement
-        # We need to retain graph if we want to train the init_head through the optimization
-        # But DINO is frozen, so we only need graph for init_head, 
-        # AND we need graph for the gradient calculation itself (create_graph=True) 
-        # if we are doing MAML-style bilevel optimization.
-        
-        # For now, let's assume valid "unrolled" backprop.
-        
+        # We perform RIGHT-INVARIANT GRADIENT DESCENT on the Sim(2) manifold:
+        #   - Compute energy gradient w.r.t. perturbation at identity
+        #   - Update via right composition: g_{k+1} = g_k · exp(-α·∇ξE)
+        #
+        # This is a standard Lie group optimization technique that respects
+        # the group structure and avoids coordinate singularities.
+        #
+        # GRADIENT FLOW:
+        #   - DINO features are frozen (no grad w.r.t. DINO params)
+        #   - We backprop through: warp → features → energy
+        #   - Gradient w.r.t. xi_perturb is computed, then used to update g_current
+        #   - Using FOMAML approximation (detach grad) to avoid expensive 2nd order backprop
+
         for i in range(self.num_iterations):
-            # We must differentiate through the warp and feature extraction
-            # But DINO parameters are frozen, so that's fine.
-            # We need grad of Energy wrt perturbation parameter at Identity.
-            
-            # Prepare perturbation variable (at Identity)
+            # Prepare perturbation variable at Identity in Lie algebra
+            # This represents a small change Δξ ∈ sim(2) at the current point
             xi_perturb = torch.zeros(B, 4, device=source_image.device, requires_grad=True)
             g_perturb = Sim2.exp(xi_perturb)
-            
-            # Compose: g_new = g_current @ g_perturb (Apply perturbation first)
+
+            # Right composition: Apply perturbation to current transformation
+            # g_candidate = g_current · g_perturb
             g_candidate = Sim2.compose(g_current, g_perturb)
             
             # Warp

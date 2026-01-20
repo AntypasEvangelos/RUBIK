@@ -135,27 +135,29 @@ if __name__ == "__main__":
                 matches, certainty = roma_model.sample(warp, certainty)
                 mkpts1_warped, mkpts2 = roma_model.to_pixel_coordinates(matches, H, W, H, W)
                 
-                # C. Transform points back
-                # mkpts1_warped are in Warped Source frame.
-                # Source_pts = g_star^-1 * Warped_pts
-                
-                # Convert kpts to torch for transformation
+                # C. Transform points back to original source coordinates
+                # COORDINATE SYSTEM EXPLANATION:
+                #   - g_star operates in NORMALIZED coordinates [-1, 1]
+                #   - RoMa outputs keypoints in PIXEL coordinates
+                #   - We need to convert: pixel → normalized → transform → pixel
+                #
+                # TRANSFORMATION FLOW:
+                #   mkpts1_warped (pixels) → normalize → mkpts1_warped_norm (normalized)
+                #   mkpts1_warped_norm · g_star^{-1} → mkpts1_norm (normalized, original frame)
+                #   mkpts1_norm → denormalize → mkpts1 (pixels, original frame)
+
                 from canonicalizer.core.lie_group import Sim2
                 from canonicalizer.core.warping import transform_points
                 from canonicalizer.core.warping import normalized_to_pixel, pixel_to_normalized
-                
-                # g_star is in Normalized coordinates [-1, 1] usually if trained that way?
-                # Wait, our warping.py assumes Sim2 operates on Normalized Grid if we use `warp_image`.
-                # Yes, `warp_image` creates a normalized grid.
-                
-                # So we need to normalize keypoints first
+
+                # Step 1: Convert RoMa keypoints from pixel to normalized coordinates
                 mkpts1_warped_norm = pixel_to_normalized(mkpts1_warped, H, W)
-                
-                # Inverse transform
+
+                # Step 2: Apply inverse transformation (warped → original)
                 g_inv = Sim2.inverse(g_star)
                 mkpts1_norm = transform_points(mkpts1_warped_norm, g_inv)
-                
-                # Back to pixels
+
+                # Step 3: Convert back to pixel coordinates
                 mkpts1 = normalized_to_pixel(mkpts1_norm, H, W)
                 
                 # Convert back to numpy
